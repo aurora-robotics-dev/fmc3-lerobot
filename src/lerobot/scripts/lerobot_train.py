@@ -236,6 +236,9 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
         ds_meta=dataset.meta,
         rename_map=cfg.rename_map,
     )
+    if is_main_process:
+        logging.info(f"Resolved policy input_features: {list(policy.config.input_features.keys())}")
+        logging.info(f"Resolved policy image_features: {list(policy.config.image_features.keys())}")
 
     if cfg.peft is not None:
         logging.info("Using PEFT! Wrapping model.")

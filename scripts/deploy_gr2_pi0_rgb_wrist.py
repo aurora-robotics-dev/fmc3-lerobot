@@ -50,7 +50,7 @@ DEFAULT_RIGHT_WRIST_SERIAL = "349522072801"
 # PD gains for GR2 joint position control.
 PD_KP_CONFIG = {
     "left_manipulator": [300, 300, 100, 100, 50, 50, 50],
-    "right_manipulator": [270, 250, 95, 95, 45, 45, 45],
+    "right_manipulator": [290, 260, 95, 95, 45, 45, 45],
     "waist": [200],
     "head": [100, 100],
 }

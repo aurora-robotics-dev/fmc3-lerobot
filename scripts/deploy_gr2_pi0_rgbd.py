@@ -207,11 +207,9 @@ def infer_single_action_multivis(
         # preprocessor: 归一化状态/图像 → policy: PI0 前向推理 → postprocessor: 反归一化动作
         action_tensor = postprocessor(policy.select_action(preprocessor(batch)))
 
-    # PI0 输出可能是 (1, chunk_size, action_dim) 的 action chunk，
-    # reshape 后取第 0 步动作，转为 numpy float32
-    raw_action = action_tensor.reshape(-1, action_tensor.shape[-1])[0].detach().cpu().numpy().astype(np.float32)
-    # fit_vector: 如果 raw_action 维度与 action_dim 不一致，截断或零填充
-    return base.fit_vector(raw_action, action_dim)
+    # 返回完整 action chunk (N, action_dim)，由主循环逐步消费
+    all_actions = action_tensor.reshape(-1, action_tensor.shape[-1]).detach().cpu().numpy().astype(np.float32)
+    return np.array([base.fit_vector(a, action_dim) for a in all_actions])
 
 
 def run(args) -> None:
@@ -334,6 +332,8 @@ def run(args) -> None:
     policy.reset()                     # 重置策略内部状态（action chunk 缓存等）
     prev_action_urdf: np.ndarray | None = None  # 上一步动作，用于平滑
     no_frame_count = 0                 # 连续无帧计数（相机诊断用）
+    action_chunk: np.ndarray | None = None  # 缓存的 action chunk (N, action_dim)
+    chunk_idx = 0                      # 当前消费到 chunk 的第几步
     no_frame_last_log_ts = time.time() # 上次无帧日志时间（避免刷屏）
     slow_loop_last_log_ts = time.time()  # 上次慢循环告警时间
 
@@ -384,21 +384,26 @@ def run(args) -> None:
             # 裁剪/填充到模型期望的 state_dim 维度
             state_model = base.fit_vector(state_full, state_dim)
 
-            # --- Step 3: 多视觉输入推理 ---
-            action_model = infer_single_action_multivis(
-                policy=policy,
-                preprocessor=preprocessor,
-                postprocessor=postprocessor,
-                device=device,
-                task=args.task,
-                robot_type=args.robot_type,
-                visual_keys=visual_keys,
-                state_key=state_key,
-                rgb=rgb,
-                depth_rgb=depth_rgb,
-                state_model=state_model,
-                action_dim=action_dim,
-            )
+            # --- Step 3: 多视觉输入推理（仅在 chunk 用完时触发） ---
+            if action_chunk is None or chunk_idx >= len(action_chunk):
+                action_chunk = infer_single_action_multivis(
+                    policy=policy,
+                    preprocessor=preprocessor,
+                    postprocessor=postprocessor,
+                    device=device,
+                    task=args.task,
+                    robot_type=args.robot_type,
+                    visual_keys=visual_keys,
+                    state_key=state_key,
+                    rgb=rgb,
+                    depth_rgb=depth_rgb,
+                    state_model=state_model,
+                    action_dim=action_dim,
+                )
+                chunk_idx = 0
+
+            action_model = action_chunk[chunk_idx]
+            chunk_idx += 1
 
             # --- Step 4: 动作后处理 ---
             # 将模型输出的动作向量适配到 GR2 的 35D URDF 动作空间

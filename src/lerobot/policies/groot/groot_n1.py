@@ -336,8 +336,19 @@ class GR00TN15(PreTrainedModel):
             # Non-floating tensors: move device only
             return x.to(self.device)
 
-        backbone_inputs = tree.map_structure(to_device_with_maybe_dtype, backbone_inputs)
-        action_inputs = tree.map_structure(to_device_with_maybe_dtype, action_inputs)
+        def _map_structure(fn, x):
+            if tree is not None:
+                return tree.map_structure(fn, x)
+            if isinstance(x, dict):
+                return {k: _map_structure(fn, v) for k, v in x.items()}
+            if isinstance(x, list):
+                return [_map_structure(fn, v) for v in x]
+            if isinstance(x, tuple):
+                return tuple(_map_structure(fn, v) for v in x)
+            return fn(x)
+
+        backbone_inputs = _map_structure(to_device_with_maybe_dtype, backbone_inputs)
+        action_inputs = _map_structure(to_device_with_maybe_dtype, action_inputs)
         return backbone_inputs, action_inputs
 
     @classmethod

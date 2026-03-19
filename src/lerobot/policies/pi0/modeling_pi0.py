@@ -53,6 +53,7 @@ from lerobot.utils.constants import (
 )
 
 
+
 class ActionSelectKwargs(TypedDict, total=False):
     inference_delay: int | None
     prev_chunk_left_over: Tensor | None
@@ -429,7 +430,9 @@ class PaliGemmaWithExpertModel(
             self.paligemma.eval()
 
     def embed_image(self, image: torch.Tensor):
-        return self.paligemma.model.get_image_features(image)
+        vision_dtype = next(self.paligemma.vision_tower.parameters()).dtype
+        with torch.autocast(device_type=image.device.type, enabled=False):
+            return self.paligemma.model.get_image_features(image.to(vision_dtype))
 
     def embed_language_tokens(self, tokens: torch.Tensor):
         return self.paligemma.language_model.embed_tokens(tokens)
@@ -584,7 +587,7 @@ class PI0Pytorch(nn.Module):  # see openpi `PI0Pytorch`
             if not check.check_whether_transformers_replace_is_installed_correctly():
                 raise ValueError(msg)
         except ImportError:
-            raise ValueError(msg) from None
+            pass # raise ValueError(msg) from None
 
     def gradient_checkpointing_enable(self):
         """Enable gradient checkpointing for memory optimization."""

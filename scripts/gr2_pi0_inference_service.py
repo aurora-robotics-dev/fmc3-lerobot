@@ -38,7 +38,7 @@ LOGGER = logging.getLogger("gr2_pi0_inference_service")
 
 DEFAULT_CHECKPOINT_PATH = (
     "/home/phl/workspace/lerobot-versions/lerobot/outputs/train/"
-    "pi0_gr2_pick_3_4_20260304_172720/checkpoints/111000/pretrained_model"
+    "pi0_gr2_pick_3_4_20260306_185911/checkpoints/070000/pretrained_model"
 )
 DEFAULT_TASK = "pick bottle and place into box"
 DEFAULT_ROBOT_TYPE = "fourier_gr2"

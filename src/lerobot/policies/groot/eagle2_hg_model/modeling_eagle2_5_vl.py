@@ -19,7 +19,7 @@ from transformers.models.llama.modeling_llama import LlamaForCausalLM
 from transformers.models.qwen2.modeling_qwen2 import Qwen2ForCausalLM
 from transformers.models.qwen3.modeling_qwen3 import Qwen3ForCausalLM
 from transformers.models.siglip.modeling_siglip import SiglipVisionModel
-from transformers.utils import add_start_docstrings, logging
+from transformers.utils import add_start_docstrings, is_flash_attn_2_available, logging
 
 from .configuration_eagle2_5_vl import Eagle25VLConfig
 
@@ -82,6 +82,21 @@ class Eagle25VLForConditionalGeneration(Eagle25VLPreTrainedModel, GenerationMixi
     config_class = Eagle25VLConfig
 
     def __init__(self, config: Eagle25VLConfig, vision_model=None, language_model=None):
+        has_flash_attn = is_flash_attn_2_available()
+        if getattr(config, "_attn_implementation", None) == "flash_attention_2" and not has_flash_attn:
+            logger.warning(
+                "flash_attn is not available; overriding Eagle _attn_implementation from "
+                "'flash_attention_2' to 'eager'."
+            )
+            config._attn_implementation = "eager"
+            config._attn_implementation_autoset = True
+            if hasattr(config, "vision_config") and hasattr(config.vision_config, "_attn_implementation"):
+                config.vision_config._attn_implementation = "eager"
+            if hasattr(config, "text_config") and hasattr(config.text_config, "_attn_implementation"):
+                # Keep the strict behavior for Qwen2 below.
+                if config.text_config.architectures[0] != "Qwen2ForCausalLM":
+                    config.text_config._attn_implementation = "eager"
+
         super().__init__(config)
 
         image_size = config.force_image_size or config.vision_config.image_size
@@ -104,7 +119,7 @@ class Eagle25VLForConditionalGeneration(Eagle25VLPreTrainedModel, GenerationMixi
             self.vision_model = vision_model
         else:
             if config.vision_config.model_type == "siglip_vision_model":
-                config.vision_config._attn_implementation = "flash_attention_2"
+                config.vision_config._attn_implementation = "flash_attention_2" if has_flash_attn else "eager"
                 self.vision_model = SiglipVisionModel(config.vision_config)
             else:
                 raise NotImplementedError(f"{config.vision_config.model_type} is not implemented.")
@@ -118,6 +133,8 @@ class Eagle25VLForConditionalGeneration(Eagle25VLPreTrainedModel, GenerationMixi
                 raise NotImplementedError("Phi3 is not implemented.")
                 # self.language_model = Phi3ForCausalLM(config.text_config)
             elif config.text_config.architectures[0] == "Qwen2ForCausalLM":
+                if not has_flash_attn:
+                    raise ImportError("Qwen2 backbone requires flash_attn, but it is not installed.")
                 assert config.text_config._attn_implementation == "flash_attention_2", (
                     f"Qwen2 must use flash_attention_2 but got {config.text_config._attn_implementation}"
                 )

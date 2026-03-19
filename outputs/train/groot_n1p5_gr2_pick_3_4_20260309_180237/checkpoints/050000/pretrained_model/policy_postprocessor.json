@@ -1,0 +1,20 @@
+{
+  "name": "policy_postprocessor",
+  "steps": [
+    {
+      "registry_name": "groot_action_unpack_unnormalize_v1",
+      "config": {
+        "env_action_dim": 32,
+        "normalize_min_max": true
+      },
+      "state_file": "policy_postprocessor_step_0_groot_action_unpack_unnormalize_v1.safetensors"
+    },
+    {
+      "registry_name": "device_processor",
+      "config": {
+        "device": "cpu",
+        "float_dtype": null
+      }
+    }
+  ]
+}

@@ -16,6 +16,7 @@
 import logging
 import os
 import re
+from hashlib import sha1
 from glob import glob
 from pathlib import Path
 
@@ -24,6 +25,18 @@ from termcolor import colored
 
 from lerobot.configs.train import TrainPipelineConfig
 from lerobot.utils.constants import PRETRAINED_MODEL_DIR
+
+WANDB_TAG_MAX_LEN = 64
+
+
+def get_safe_wandb_tag(tag: str, max_len: int = WANDB_TAG_MAX_LEN) -> str:
+    """WandB tags must be <= 64 chars. Truncate long tags while preserving uniqueness."""
+    if len(tag) <= max_len:
+        return tag
+
+    digest = sha1(tag.encode("utf-8")).hexdigest()[:8]
+    prefix_len = max_len - len(digest) - 1
+    return f"{tag[:prefix_len]}-{digest}"
 
 
 def cfg_to_group(cfg: TrainPipelineConfig, return_list: bool = False) -> list[str] | str:
@@ -83,7 +96,7 @@ class WandBLogger:
             entity=self.cfg.entity,
             name=self.job_name,
             notes=self.cfg.notes,
-            tags=cfg_to_group(cfg, return_list=True),
+            tags=[get_safe_wandb_tag(tag) for tag in cfg_to_group(cfg, return_list=True)],
             dir=self.log_dir,
             config=cfg.to_dict(),
             # TODO(rcadene): try set to True

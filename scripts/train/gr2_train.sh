@@ -2,16 +2,16 @@
 set -euo pipefail
 
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
-OUTPUT_DIR="/home/phl/workspace/mymodels/gr2/pi0_gr2_grab_bottle_into_box_rgb_${TIMESTAMP}"
+OUTPUT_DIR="/home/phl/workspace/mymodels/gr2/pi0_gr2_grab_bottle_from_box_to_desk_rgb_${TIMESTAMP}"
 
-echo "dataset_root=/home/phl/workspace/dataset/fourier/gr2/muticams/lerobot/fmc3_gr2_grab_bottle_into_box_lerobot_ds_rgb"
+echo "dataset_root=/home/phl/workspace/dataset/fourier/gr2/muticams/lerobot/fmc3_gr2_grab_bottle_from_box_to_desk_lerobot_ds_rgb"
 echo "output_dir=${OUTPUT_DIR}"
 echo "batch_size=8"
 
 PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True" \
 lerobot-train \
-    --dataset.repo_id=local/fmc3_gr2_grab_bottle_into_box_lerobot_ds_rgb \
-    --dataset.root=/home/phl/workspace/dataset/fourier/gr2/muticams/lerobot/fmc3_gr2_grab_bottle_into_box_lerobot_ds_rgb \
+    --dataset.repo_id=local/fmc3_gr2_grab_bottle_from_box_to_desk_lerobot_ds_rgb \
+    --dataset.root=/home/phl/workspace/dataset/fourier/gr2/muticams/lerobot/fmc3_gr2_grab_bottle_from_box_to_desk_lerobot_ds_rgb \
     --dataset.streaming=false \
     --dataset.video_backend=torchcodec \
     --policy.type=pi0 \
@@ -26,10 +26,10 @@ lerobot-train \
     --policy.device=cuda \
     --policy.push_to_hub=false \
     --output_dir="${OUTPUT_DIR}" \
-    --job_name=pi0_gr2_grab_bottle_into_box_rgb \
+    --job_name=pi0_gr2_grab_bottle_from_box_to_desk_rgb \
     --steps=100000 \
-    --save_freq=10000 \
+    --save_freq=5000 \
     --log_freq=50 \
     --wandb.enable=true \
-    --wandb.project=Lerobot_Phl_Project_grap_box_into_box \
+    --wandb.project=Lerobot_Phl_Project_to_desk \
     --batch_size=8

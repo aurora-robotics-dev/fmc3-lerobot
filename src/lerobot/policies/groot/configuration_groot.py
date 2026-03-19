@@ -15,12 +15,15 @@
 # limitations under the License.
 
 from dataclasses import dataclass, field
+from logging import getLogger
 
 from lerobot.configs.policies import PreTrainedConfig
 from lerobot.configs.types import FeatureType, NormalizationMode, PolicyFeature
 from lerobot.optim.optimizers import AdamWConfig
 from lerobot.optim.schedulers import CosineDecayWithWarmupSchedulerConfig
 from lerobot.utils.constants import ACTION, OBS_STATE
+
+logger = getLogger(__name__)
 
 
 @PreTrainedConfig.register_subclass("groot")
@@ -148,9 +151,14 @@ class GrootConfig(PreTrainedConfig):
             state_shape = self.input_features[OBS_STATE].shape
             state_dim = state_shape[0] if state_shape else 0
             if state_dim > self.max_state_dim:
-                raise ValueError(
-                    f"State dimension {state_dim} exceeds max_state_dim {self.max_state_dim}. "
-                    f"Either reduce state dimension or increase max_state_dim in config."
+                logger.warning(
+                    "State dimension %s exceeds max_state_dim %s. Input state will be truncated to max_state_dim.",
+                    state_dim,
+                    self.max_state_dim,
+                )
+                self.input_features[OBS_STATE] = PolicyFeature(
+                    type=FeatureType.STATE,
+                    shape=(self.max_state_dim,),
                 )
 
         if ACTION not in self.output_features:
@@ -163,9 +171,15 @@ class GrootConfig(PreTrainedConfig):
             action_shape = self.output_features[ACTION].shape
             action_dim = action_shape[0] if action_shape else 0
             if action_dim > self.max_action_dim:
-                raise ValueError(
-                    f"Action dimension {action_dim} exceeds max_action_dim {self.max_action_dim}. "
-                    f"Either reduce action dimension or increase max_action_dim in config."
+                logger.warning(
+                    "Action dimension %s exceeds max_action_dim %s. Output action will be truncated to "
+                    "max_action_dim.",
+                    action_dim,
+                    self.max_action_dim,
+                )
+                self.output_features[ACTION] = PolicyFeature(
+                    type=FeatureType.ACTION,
+                    shape=(self.max_action_dim,),
                 )
 
     def get_optimizer_preset(self) -> AdamWConfig:

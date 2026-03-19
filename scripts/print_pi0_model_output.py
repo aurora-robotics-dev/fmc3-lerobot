@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=(
             "/home/phl/workspace/lerobot-versions/lerobot/outputs/train/"
-            "pi0_gr2_pick_3_4_20260304_172720/checkpoints/060000/pretrained_model"
+            "pi0_gr2_pick_3_4_20260306_185911/checkpoints/070000/pretrained_model"
         ),
         help="Checkpoint root or pretrained_model directory.",
     )

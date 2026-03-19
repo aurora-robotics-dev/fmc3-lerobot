@@ -8,7 +8,7 @@ UNIX_SOCKET_PATH="${UNIX_SOCKET_PATH:-/tmp/gr2_pi0_inference_service.sock}"
 ROBOT_NAME="${ROBOT_NAME:-gr2}"
 DOMAIN_ID="${DOMAIN_ID:-123}"
 
-CHECKPOINT_PATH="${CHECKPOINT_PATH:-/home/phl/workspace/lerobot-versions/lerobot/outputs/train/pi0_gr2_pick_3_4_20260304_172720/checkpoints/111000/pretrained_model}"
+CHECKPOINT_PATH="${CHECKPOINT_PATH:-/home/phl/workspace/lerobot-versions/lerobot/outputs/train/pi0_gr2_pick_3_4_20260306_185911/checkpoints/070000/pretrained_model}"
 TASK="${TASK:-pick bottle and place into box}"
 ROBOT_TYPE="${ROBOT_TYPE:-fourier_gr2}"
 

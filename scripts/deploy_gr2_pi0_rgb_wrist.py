@@ -38,7 +38,7 @@ _RECEIVED_STOP_SIGNAL = False
 
 DEFAULT_CHECKPOINT_PATH = (
     "/home/phl/workspace/mymodels/gr2/"
-    "pi0_gr2_grab_bottle_from_box_to_desk_rgb/checkpoints/050000/pretrained_model"
+    "pi0_gr2_grab_bottle_from_box_to_desk_rgb_20260317_183227/checkpoints/035000/pretrained_model"
 )
 DEFAULT_DATASET_ROOT = (
     "/home/phl/workspace/dataset/fourier/gr2/muticams/lerobot/"
@@ -50,7 +50,7 @@ DEFAULT_RIGHT_WRIST_SERIAL = "349522072801"
 # PD gains for GR2 joint position control.
 PD_KP_CONFIG = {
     "left_manipulator": [300, 300, 100, 100, 50, 50, 50],
-    "right_manipulator": [290, 260, 95, 95, 45, 45, 45],
+    "right_manipulator": [279, 210, 90, 60, 45, 45, 45],
     "waist": [200],
     "head": [100, 100],
 }
@@ -339,6 +339,7 @@ def infer_single_action(
     state_model: np.ndarray,
     action_dim: int,
 ) -> np.ndarray:
+    """Run a single PI0 forward pass and return the full action chunk."""
     observation = _build_visual_observation(
         visual_keys=visual_keys,
         top_rgb=top_rgb,
@@ -356,13 +357,22 @@ def infer_single_action(
         )
         action_tensor = postprocessor(policy.select_action(preprocessor(batch)))
 
-    raw_action = action_tensor.reshape(-1, action_tensor.shape[-1])[0].detach().cpu().numpy().astype(np.float32)
-    return base.fit_vector(raw_action, action_dim)
+    all_actions = action_tensor.reshape(-1, action_tensor.shape[-1]).detach().cpu().numpy().astype(np.float32)
+    return np.array([base.fit_vector(action, action_dim) for action in all_actions], dtype=np.float32)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Deploy Pi0 on GR2 with RGB-only top + dual wrist cameras.")
-    parser.add_argument("--checkpoint-path", type=str, default=DEFAULT_CHECKPOINT_PATH)
+    parser.add_argument(
+        "--checkpoint-path",
+        "--weights",
+        "--weights-path",
+        "--ckpt",
+        dest="checkpoint_path",
+        type=str,
+        default=DEFAULT_CHECKPOINT_PATH,
+        help="Path to the checkpoint directory or pretrained_model directory to load at runtime.",
+    )
     parser.add_argument(
         "--dataset-root",
         type=str,
@@ -376,7 +386,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--client-init-retries", type=int, default=4)
     parser.add_argument("--client-retry-interval-s", type=float, default=2.0)
     parser.add_argument("--fsm-state", type=int, default=11)
-    parser.add_argument("--fps", type=float, default=10.0)
+    parser.add_argument("--fps", type=float, default=30.0)
     parser.add_argument("--transition-time-s", type=float, default=6.0)
     parser.add_argument("--transition-freq", type=int, default=100)
     parser.add_argument("--log-every", type=int, default=10)
@@ -397,7 +407,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--camera-key", type=str, default="observation.images.camera_top")
     parser.add_argument("--camera-width", type=int, default=640)
     parser.add_argument("--camera-height", type=int, default=480)
-    parser.add_argument("--camera-fps", type=int, default=15)
+    parser.add_argument("--camera-fps", type=int, default=30)
     parser.add_argument("--camera-timeout-ms", type=int, default=200)
     parser.add_argument("--camera-warmup-frames", type=int, default=15)
     parser.add_argument("--camera-init-retries", type=int, default=6)
@@ -409,6 +419,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--save-every", type=int, default=0)
 
     wrist = parser.add_argument_group("Wrist RealSense cameras")
+    wrist.add_argument(
+        "--wrist-left-serial",
+        type=str,
+        default=DEFAULT_LEFT_WRIST_SERIAL,
+        help="Left wrist RealSense serial number or device name. Leave empty to auto-detect both wrists.",
+    )
+    wrist.add_argument(
+        "--wrist-right-serial",
+        type=str,
+        default=DEFAULT_RIGHT_WRIST_SERIAL,
+        help="Right wrist RealSense serial number or device name. Leave empty to auto-detect both wrists.",
+    )
     wrist.add_argument("--wrist-width", type=int, default=640)
     wrist.add_argument("--wrist-height", type=int, default=480)
     wrist.add_argument("--wrist-fps", type=int, default=30)
@@ -500,15 +522,15 @@ def render_gui_frame(
     frame_idx: int,
 ) -> tuple[bool, float]:
     panel_images = [
-        _resize_for_panel(top_rgb, args.camera_width, args.camera_height),
         _resize_for_panel(left_wrist_rgb, args.camera_width, args.camera_height),
+        _resize_for_panel(top_rgb, args.camera_width, args.camera_height),
         _resize_for_panel(right_wrist_rgb, args.camera_width, args.camera_height),
     ]
     panel = np.hstack([cv2.cvtColor(img, cv2.COLOR_RGB2BGR) for img in panel_images])
 
     now = time.time()
     vis_fps = 1.0 / max(1e-6, now - last_vis_ts)
-    labels = ["Top RGB", "Left Wrist RGB", "Right Wrist RGB"]
+    labels = ["Left Wrist RGB", "Top RGB", "Right Wrist RGB"]
     for idx, label in enumerate(labels):
         x = idx * args.camera_width + 10
         cv2.putText(panel, label, (x, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
@@ -626,8 +648,23 @@ def run(args: argparse.Namespace) -> None:
     try:
         orbbec.connect()
 
-        left_sn = DEFAULT_LEFT_WRIST_SERIAL
-        right_sn = DEFAULT_RIGHT_WRIST_SERIAL
+        left_sn = args.wrist_left_serial.strip()
+        right_sn = args.wrist_right_serial.strip()
+
+        if need_left_wrist or need_right_wrist:
+            if not left_sn and not right_sn:
+                LOGGER.info("Auto-detecting RealSense wrist cameras...")
+                left_sn, right_sn = _auto_detect_realsense_pair()
+            elif need_left_wrist and not left_sn:
+                raise ValueError(
+                    "`--wrist-left-serial` is required for checkpoints that use the left wrist camera. "
+                    "Leave both wrist serials empty to auto-detect the pair."
+                )
+            elif need_right_wrist and not right_sn:
+                raise ValueError(
+                    "`--wrist-right-serial` is required for checkpoints that use the right wrist camera. "
+                    "Leave both wrist serials empty to auto-detect the pair."
+                )
 
         if need_left_wrist:
             LOGGER.info("Connecting left wrist RealSense (SN=%s)...", left_sn)
@@ -695,6 +732,8 @@ def run(args: argparse.Namespace) -> None:
         slow_loop_last_log_ts = time.time()
         last_top_id = last_left_id = last_right_id = 0
         policy.reset()
+        action_chunk: np.ndarray | None = None
+        chunk_idx = 0
 
         while True:
             loop_start = time.perf_counter()
@@ -703,25 +742,35 @@ def run(args: argparse.Namespace) -> None:
             if grabber_left is not None:
                 left_id, left_rgb = grabber_left.get_new_frame(last_left_id)
             else:
-                left_id, left_rgb = last_left_id, blank_left_rgb
+                left_id, left_rgb = last_left_id, None
             if grabber_right is not None:
                 right_id, right_rgb = grabber_right.get_new_frame(last_right_id)
             else:
-                right_id, right_rgb = last_right_id, blank_right_rgb
+                right_id, right_rgb = last_right_id, None
 
-            if top_rgb is None and last_top_id == 0:
+            has_new_frame = top_rgb is not None
+            if grabber_left is not None and left_rgb is not None:
+                has_new_frame = True
+            if grabber_right is not None and right_rgb is not None:
+                has_new_frame = True
+
+            latest_top_rgb = grabber_top.get_latest()
+            latest_left_rgb = grabber_left.get_latest() if grabber_left is not None else blank_left_rgb
+            latest_right_rgb = grabber_right.get_latest() if grabber_right is not None else blank_right_rgb
+
+            if latest_top_rgb is None:
                 time.sleep(0.001)
                 continue
-            if top_rgb is None and left_rgb is None and right_rgb is None:
+            if not has_new_frame and (action_chunk is None or len(action_chunk) == 0):
                 time.sleep(0.001)
                 continue
 
             if top_rgb is None:
-                top_rgb = grabber_top.get_latest()
+                top_rgb = latest_top_rgb
             if left_rgb is None and grabber_left is not None:
-                left_rgb = grabber_left.get_latest()
+                left_rgb = latest_left_rgb
             if right_rgb is None and grabber_right is not None:
-                right_rgb = grabber_right.get_latest()
+                right_rgb = latest_right_rgb
             if left_rgb is None:
                 left_rgb = blank_left_rgb
             if right_rgb is None:
@@ -739,22 +788,32 @@ def run(args: argparse.Namespace) -> None:
                 state_full = base.get_robot_state_urdf(client)
             state_model = base.fit_vector(state_full, state_dim)
 
-            raw_action_urdf = infer_single_action(
-                policy=policy,
-                preprocessor=preprocessor,
-                postprocessor=postprocessor,
-                device=device,
-                task=args.task,
-                robot_type=args.robot_type,
-                visual_keys=visual_keys,
-                state_key=state_key,
-                top_rgb=top_rgb,
-                left_wrist_rgb=left_rgb,
-                right_wrist_rgb=right_rgb,
-                state_model=state_model,
-                action_dim=action_dim,
-            )
-            raw_action_urdf = base.fit_vector(raw_action_urdf, 35)
+            if has_new_frame:
+                action_chunk = infer_single_action(
+                    policy=policy,
+                    preprocessor=preprocessor,
+                    postprocessor=postprocessor,
+                    device=device,
+                    task=args.task,
+                    robot_type=args.robot_type,
+                    visual_keys=visual_keys,
+                    state_key=state_key,
+                    top_rgb=top_rgb,
+                    left_wrist_rgb=left_rgb,
+                    right_wrist_rgb=right_rgb,
+                    state_model=state_model,
+                    action_dim=action_dim,
+                )
+                chunk_idx = 0
+                action_model = action_chunk[0]
+            else:
+                if action_chunk is None or len(action_chunk) == 0:
+                    time.sleep(0.001)
+                    continue
+                chunk_idx = min(chunk_idx + 1, len(action_chunk) - 1)
+                action_model = action_chunk[chunk_idx]
+
+            raw_action_urdf = base.fit_vector(action_model, 35)
 
             prev_action_for_diag = prev_action_urdf
             action_urdf = raw_action_urdf.copy()
@@ -769,6 +828,8 @@ def run(args: argparse.Namespace) -> None:
                 if first_action and args.transition_time_s > 0:
                     base.smooth_transition(client, action_urdf, args.transition_time_s, args.transition_freq)
                     policy.reset()
+                    action_chunk = None
+                    chunk_idx = 0
                     first_action = False
                 else:
                     base.send_action_to_robot(client, action_urdf, args.send_base)

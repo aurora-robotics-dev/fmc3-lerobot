@@ -28,6 +28,7 @@ import torch
 from lerobot.policies.factory import make_pre_post_processors
 from lerobot.policies.pi0.modeling_pi0 import PI0Policy
 from lerobot.policies.utils import prepare_observation_for_inference
+from lerobot.utils.aurora_compat import patch_fourier_aurora_client_enums
 from lerobot.utils.gr2_hand_conversion import hand_sdk_to_urdf, hand_urdf_to_sdk
 
 LOGGER = logging.getLogger(__name__)
@@ -35,7 +36,7 @@ WINDOW_NAME = "GR2 PI0 Deploy | RGB + Depth (q/ESC quit, s save)"
 _RECEIVED_STOP_SIGNAL = False
 DEFAULT_CHECKPOINT_PATH = (
     "/home/phl/workspace/lerobot-versions/lerobot/outputs/train/"
-    "pi0_gr2_pick_20260303_230510/checkpoints/085000"
+    "pi0_gr2_pick_3_4_20260306_185911/checkpoints/070000/pretrained_model"
 )
 DEFAULT_TASK = "pick bottle"
 DEFAULT_ROBOT_TYPE = "fourier_gr2"
@@ -793,6 +794,7 @@ def smooth_transition(client: Any, target_action_urdf: np.ndarray, duration_s: f
 
 
 def load_robot_client(domain_id: int, robot_name: str, retries: int, retry_interval_s: float) -> Any:
+    patch_fourier_aurora_client_enums()
     from fourier_aurora_client import AuroraClient
 
     last_exc: Exception | None = None

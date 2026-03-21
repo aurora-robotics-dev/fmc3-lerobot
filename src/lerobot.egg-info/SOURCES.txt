@@ -283,6 +283,7 @@ src/lerobot/templates/lerobot_modelcard_template.md
 src/lerobot/transport/services_pb2.py
 src/lerobot/transport/services_pb2_grpc.py
 src/lerobot/transport/utils.py
+src/lerobot/utils/aurora_compat.py
 src/lerobot/utils/constants.py
 src/lerobot/utils/control_utils.py
 src/lerobot/utils/decorators.py

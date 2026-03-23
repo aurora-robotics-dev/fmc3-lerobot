@@ -38,7 +38,7 @@ _RECEIVED_STOP_SIGNAL = False
 
 DEFAULT_CHECKPOINT_PATH = (
     "/home/phl/workspace/mymodels/gr2/"
-    "pi0_gr2_grab_bottle_from_box_to_desk_rgb_20260317_183227/checkpoints/035000/pretrained_model"
+    "pi0_gr2_grab_bottle_from_box_to_desk_rgb/checkpoints/050000/pretrained_model"
 )
 DEFAULT_DATASET_ROOT = (
     "/home/phl/workspace/dataset/fourier/gr2/muticams/lerobot/"

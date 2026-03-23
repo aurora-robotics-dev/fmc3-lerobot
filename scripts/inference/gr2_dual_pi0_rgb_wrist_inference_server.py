@@ -51,7 +51,7 @@ MODEL_PUT_IN = "put_in"
 PD_GAINS_TAKE_OUT = {
     "kp": {
         "left_manipulator": [300, 300, 100, 100, 50, 50, 50],
-        "right_manipulator": [270, 250, 95, 95, 45, 45, 45],
+        "right_manipulator": [220, 220, 95, 95, 45, 45, 45],
         "waist": [200],
         "head": [100, 100],
     },
@@ -67,7 +67,7 @@ PD_GAINS_TAKE_OUT = {
 PD_GAINS_PUT_IN = {
     "kp": {
         "left_manipulator": [300, 300, 100, 100, 50, 50, 50],
-        "right_manipulator": [210, 210, 80, 60, 45, 45, 45],
+        "right_manipulator": [150, 170, 70, 50, 45, 45, 45],
         "waist": [200],
         "head": [100, 100],
     },
@@ -85,7 +85,7 @@ PD_GAINS_BY_MODEL: dict[str, dict[str, dict[str, list[int]]]] = {
 }
 DEFAULT_TAKE_OUT_CHECKPOINT_PATH = (
     "/home/phl/workspace/mymodels/gr2/"
-    "pi0_gr2_grab_bottle_from_box_to_desk_rgb_3_cam/checkpoints/030000/pretrained_model"
+    "pi0_gr2_grab_bottle_from_box_to_desk_rgb_3_cam/checkpoints/035000/pretrained_model"
 )
 DEFAULT_TAKE_OUT_TASK = "take the bottle out of the box and place it on the desk"
 DEFAULT_PUT_IN_CHECKPOINT_PATH = (

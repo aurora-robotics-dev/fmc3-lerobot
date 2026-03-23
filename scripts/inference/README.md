@@ -8,7 +8,12 @@
 
 ```bash
 # 方式一：直接启动
-HF_HUB_OFFLINE=1 python scripts/inference/gr2_dual_pi0_rgb_wrist_inference_server.py --device cuda
+HF_HUB_OFFLINE=1 python scripts/inference/gr2_dual_pi0_rgb_wrist_inference_server.py \
+  --device cuda \
+  --no-move-to-init-pose-on-start \
+  --max-arm-delta 0.03 \
+  --arm-ema-alpha 0.2
+
 
 # 方式二：通过启动脚本（推荐，自动清理旧进程和 socket）
 bash scripts/inference/start_gr2_dual_pi0_rgb_wrist_inference_server.sh

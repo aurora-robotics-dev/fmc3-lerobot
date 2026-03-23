@@ -67,7 +67,7 @@ PD_GAINS_TAKE_OUT = {
 PD_GAINS_PUT_IN = {
     "kp": {
         "left_manipulator": [300, 300, 100, 100, 50, 50, 50],
-        "right_manipulator": [260, 210, 80, 60, 45, 45, 45],
+        "right_manipulator": [210, 210, 80, 60, 45, 45, 45],
         "waist": [200],
         "head": [100, 100],
     },

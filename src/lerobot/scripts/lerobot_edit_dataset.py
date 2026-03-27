@@ -177,6 +177,24 @@ def get_output_path(repo_id: str, new_repo_id: str | None, root: Path | None) ->
     return output_repo_id, output_dir
 
 
+def _is_dataset_root(root: Path) -> bool:
+    return (root / "meta" / "info.json").is_file()
+
+
+def _resolve_merge_roots(repo_ids: list[str], root: Path | None) -> tuple[list[Path | None], Path | None]:
+    if root is None:
+        return [None] * len(repo_ids), None
+
+    if _is_dataset_root(root):
+        return [root] * len(repo_ids), root.parent
+
+    nested_roots = [root / repo_id for repo_id in repo_ids]
+    if all(_is_dataset_root(dataset_root) for dataset_root in nested_roots):
+        return nested_roots, root
+
+    return [root] * len(repo_ids), root
+
+
 def handle_delete_episodes(cfg: EditDatasetConfig) -> None:
     if not isinstance(cfg.operation, DeleteEpisodesConfig):
         raise ValueError("Operation config must be DeleteEpisodesConfig")
@@ -243,10 +261,18 @@ def handle_merge(cfg: EditDatasetConfig) -> None:
     if not cfg.repo_id:
         raise ValueError("repo_id must be specified as the output repository for merged dataset")
 
-    logging.info(f"Loading {len(cfg.operation.repo_ids)} datasets to merge")
-    datasets = [LeRobotDataset(repo_id, root=cfg.root) for repo_id in cfg.operation.repo_ids]
+    merge_roots, output_base = _resolve_merge_roots(
+        cfg.operation.repo_ids,
+        Path(cfg.root) if cfg.root else None,
+    )
 
-    output_dir = Path(cfg.root) / cfg.repo_id if cfg.root else HF_LEROBOT_HOME / cfg.repo_id
+    logging.info(f"Loading {len(cfg.operation.repo_ids)} datasets to merge")
+    datasets = [
+        LeRobotDataset(repo_id, root=dataset_root)
+        for repo_id, dataset_root in zip(cfg.operation.repo_ids, merge_roots, strict=True)
+    ]
+
+    output_dir = output_base / cfg.repo_id if output_base else HF_LEROBOT_HOME / cfg.repo_id
 
     logging.info(f"Merging datasets into {cfg.repo_id}")
     merged_dataset = merge_datasets(

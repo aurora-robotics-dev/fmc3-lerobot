@@ -29,7 +29,13 @@ from lerobot.datasets.dataset_tools import (
     remove_feature,
     split_dataset,
 )
-from lerobot.scripts.lerobot_edit_dataset import convert_image_to_video_dataset
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.scripts.lerobot_edit_dataset import (
+    EditDatasetConfig,
+    MergeConfig,
+    convert_image_to_video_dataset,
+    handle_merge,
+)
 
 
 @pytest.fixture
@@ -292,6 +298,47 @@ def test_merge_empty_list(tmp_path):
     """Test error when merging empty list."""
     with pytest.raises(ValueError, match="No datasets to merge"):
         merge_datasets([], output_repo_id="merged", output_dir=tmp_path)
+
+
+def test_handle_merge_with_parent_root(tmp_path, empty_lerobot_dataset_factory):
+    """Test merging local datasets from a shared parent directory."""
+    parent_root = tmp_path / "datasets"
+    features = {
+        "action": {"dtype": "float32", "shape": (6,), "names": None},
+        "observation.state": {"dtype": "float32", "shape": (4,), "names": None},
+    }
+
+    def make_dataset(root, task_name):
+        dataset = empty_lerobot_dataset_factory(root=root, features=features, use_videos=False)
+
+        for _ in range(2):
+            for _ in range(3):
+                dataset.add_frame(
+                    {
+                        "action": np.random.randn(6).astype(np.float32),
+                        "observation.state": np.random.randn(4).astype(np.float32),
+                        "task": task_name,
+                    }
+                )
+            dataset.save_episode()
+
+        dataset.finalize()
+        return dataset
+
+    dataset_1 = make_dataset(parent_root / "dataset_one", "task_one")
+    dataset_2 = make_dataset(parent_root / "dataset_two", "task_two")
+
+    handle_merge(
+        EditDatasetConfig(
+            repo_id="merged_dataset",
+            root=str(parent_root),
+            operation=MergeConfig(repo_ids=[dataset_1.root.name, dataset_2.root.name]),
+        )
+    )
+
+    merged = LeRobotDataset("merged_dataset", root=parent_root / "merged_dataset")
+    assert merged.meta.total_episodes == dataset_1.meta.total_episodes + dataset_2.meta.total_episodes
+    assert merged.meta.total_frames == dataset_1.meta.total_frames + dataset_2.meta.total_frames
 
 
 def test_add_features_with_values(sample_dataset, tmp_path):

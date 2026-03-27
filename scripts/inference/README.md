@@ -14,6 +14,7 @@ HF_HUB_OFFLINE=1 python scripts/inference/gr2_dual_pi0_rgb_wrist_inference_serve
   --max-arm-delta 0.03 \
   --arm-ema-alpha 0.2
 
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python gr2_dual_pi0_rgb_wrist_inference_server.py
 
 # 方式二：通过启动脚本（推荐，自动清理旧进程和 socket）
 bash scripts/inference/start_gr2_dual_pi0_rgb_wrist_inference_server.sh

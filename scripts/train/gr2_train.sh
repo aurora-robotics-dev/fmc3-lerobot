@@ -1,37 +1,41 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
-REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-OUTPUT_DIR="/home/phl/workspace/mymodels/gr2/act_gr2_grab_bottle_from_box_to_desk_rgb_${TIMESTAMP}"
+cd "$(dirname "$0")/../.."
 
-echo "dataset_root=/home/phl/workspace/dataset/fourier/gr2/muticams/lerobot/fmc3_gr2_grab_bottle_from_box_to_desk_lerobot_ds_rgb"
-echo "output_dir=${OUTPUT_DIR}"
-echo "policy_type=act"
-echo "batch_size=8"
+if [[ "${1:-}" == "--resume" ]]; then
+  conda run --no-capture-output -n lerobot-pi0 \
+    lerobot-train \
+    --config_path=/home/phl/workspace/mymodels/gr2/pi0_gr2_black_capped_bottle_yellow_to_green/checkpoints/last/pretrained_model/train_config.json \
+    --resume=true
+  exit 0
+fi
 
-cd "${REPO_ROOT}"
-
-PYTHONPATH="${REPO_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}" \
-PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True" \
-python -m lerobot.scripts.lerobot_train \
-    --dataset.repo_id=local/fmc3_gr2_grab_bottle_from_box_to_desk_lerobot_ds_rgb \
-    --dataset.root=/home/phl/workspace/dataset/fourier/gr2/muticams/lerobot/fmc3_gr2_grab_bottle_from_box_to_desk_lerobot_ds_rgb \
-    --dataset.streaming=false \
-    --dataset.video_backend=torchcodec \
-    --policy.type=act \
-    --policy.input_features=null \
-    --policy.output_features=null \
-    --policy.chunk_size=100 \
-    --policy.n_action_steps=100 \
-    --policy.use_amp=true \
-    --policy.device=cuda \
-    --policy.push_to_hub=false \
-    --output_dir="${OUTPUT_DIR}" \
-    --job_name=act_gr2_grab_bottle_from_box_to_desk_rgb \
-    --steps=100000 \
-    --save_freq=5000 \
-    --log_freq=50 \
-    --wandb.enable=true \
-    --wandb.project=Lerobot_Phl_Project_to_desk \
-    --batch_size=8
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+conda run --no-capture-output -n lerobot-pi0 \
+  lerobot-train \
+  --dataset.repo_id=local/fmc3_gr2_green_yellow_merged \
+  --dataset.root=/home/phl/workspace/dataset/fourier/gr2/muticams/lerobot/fmc3_gr2_green_yellow_merged \
+  --dataset.streaming=false \
+  --dataset.video_backend=torchcodec \
+  --policy.path=/home/phl/workspace/models/pi0 \
+  --policy.input_features=null \
+  --policy.output_features=null \
+  --policy.compile_model=false \
+  --policy.gradient_checkpointing=true \
+  --policy.dtype=bfloat16 \
+  --policy.freeze_vision_encoder=false \
+  --policy.train_expert_only=false \
+  --policy.max_state_dim=45 \
+  --policy.max_action_dim=35 \
+  --policy.device=cuda \
+  --policy.push_to_hub=false \
+  --output_dir=/home/phl/workspace/mymodels/gr2/fmc3_gr2_green_yellow_merged_3_26 \
+  --job_name=fmc3_gr2_green_yellow_merged \
+  --steps=100000 \
+  --save_freq=10000 \
+  --log_freq=50 \
+  --wandb.enable=false\
+  --wandb.disable_artifact=false \
+  --wandb.project=Lerobot_Phl_Project \
+  --batch_size=8

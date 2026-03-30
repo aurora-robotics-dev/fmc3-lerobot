@@ -54,11 +54,15 @@ RIGHT_HAND_THUMB_PITCH_INDEX = 24
 DEFAULT_GREEN_TO_YELLOW_CHECKPOINT_PATH = (
     "/home/phl/workspace/mymodels/gr2/pi0/pi0_green_to_yellow_0327/checkpoints/last/pretrained_model"
 )
-DEFAULT_GREEN_TO_YELLOW_TASK = "pick up the bottle from the green grid cell and place it on the yellow grid cell"
-DEFAULT_YELLOW_TO_GREEN_CHECKPOINT_PATH = (
-    "/home/phl/workspace/mymodels/gr2/pi0/pi0_gr2_black_capped_bottle_yellow_to_green/checkpoints/050000/pretrained_model"
+DEFAULT_GREEN_TO_YELLOW_TASK = (
+    "move the black-capped bottle from the green area to the yellow area"
 )
-DEFAULT_YELLOW_TO_GREEN_TASK = "pick up the bottle from the yellow grid cell and place it on the green grid cell"
+DEFAULT_YELLOW_TO_GREEN_CHECKPOINT_PATH = (
+    "/home/phl/workspace/mymodels/gr2/pi0/pi0_gr2_black_capped_bottle_yellow_to_green/checkpoints/last/pretrained_model"
+)
+DEFAULT_YELLOW_TO_GREEN_TASK = (
+    "move the black-capped bottle from the yellow area to the green area"
+)
 
 
 @dataclass(frozen=True)
@@ -1445,15 +1449,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--disable-clamp", action="store_true")
     parser.add_argument("--send-base", action="store_true")
-    parser.add_argument("--transition-time-s", type=float, default=6.0)
-    parser.add_argument("--switch-transition-time-s", type=float, default=1.5,
-                        help="Shorter transition time used when switching between models (default: 1.5s)")
+    parser.add_argument("--transition-time-s", type=float, default=0.0)
+    parser.add_argument("--switch-transition-time-s", type=float, default=0.0,
+                        help="Shorter transition time used when switching between models (default: 0.0s)")
     parser.add_argument("--transition-freq", type=int, default=100)
 
     parser.add_argument(
         "--move-to-init-pose-on-start",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
     )
     parser.add_argument("--init-pose-transition-time-s", type=float, default=3.0)
     parser.add_argument("--init-pose-transition-freq", type=int, default=100)

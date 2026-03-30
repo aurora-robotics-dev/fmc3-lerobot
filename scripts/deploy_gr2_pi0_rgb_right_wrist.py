@@ -3,7 +3,7 @@
 """Deploy a Pi0 policy on Fourier GR2 with top + right-wrist RGB cameras only.
 
 This script is adapted from `deploy_gr2_pi0_rgb_wrist.py` for the dataset:
-`fmc3_gr2_black_capped_bottle_yellow_to_green_lerobot`
+`fmc3_gr2_green_yellow_merged`
 HF_HUB_OFFLINE=1 python ./scripts/deploy_gr2_pi0_rgb_right_wrist.py --skip-confirm
 Expected observations:
   - observation.images.camera_top
@@ -40,22 +40,20 @@ LOGGER = logging.getLogger(__name__)
 WINDOW_NAME = "GR2 PI0 Deploy | Top + Right Wrist (q/ESC quit, s save)"
 _RECEIVED_STOP_SIGNAL = False
 
+# DEFAULT_CHECKPOINT_PATH = (
+#     "/home/phl/workspace/mymodels/gr2/pi0/pi0_green_to_yellow_0327/checkpoints/last/pretrained_model"
+# )
+# DEFAULT_DATASET_ROOT = (
+#     "/home/phl/workspace/dataset/Robot/fourier/gr2/muticams/lerobot/"
+#     "fmc3_gr2_green_yellow_merged"
+# )
 DEFAULT_CHECKPOINT_PATH = (
-    "/home/phl/workspace/mymodels/gr2/pi0/"
     "/home/phl/workspace/mymodels/gr2/pi0/pi0_gr2_black_capped_bottle_yellow_to_green/checkpoints/last/pretrained_model"
 )
 DEFAULT_DATASET_ROOT = (
-    "/home/phl/workspace/dataset/fourier/gr2/muticams/lerobot/"
+    "/home/phl/workspace/dataset/Robot/fourier/gr2/muticams/lerobot/"
     "fmc3_gr2_black_capped_bottle_yellow_to_green_lerobot"
 )
-# DEFAULT_CHECKPOINT_PATH = (
-#     "/home/phl/workspace/mymodels/gr2/"
-#     "/pi0_gr2_black_capped_bottle_green_to_yellow/050000/pretrained_model"
-# )
-# DEFAULT_DATASET_ROOT = (
-#     "/home/phl/workspace/dataset/fourier/gr2/muticams/lerobot/"
-#     "fmc3_gr2_black_capped_bottle_green_to_yellow_lerobot"
-# )
 DEFAULT_RIGHT_WRIST_SERIAL = "349522072801"
 LEFT_MANIPULATOR_SLICE = slice(0, 7)
 LEFT_HAND_SLICE = slice(14, 20)
@@ -566,13 +564,13 @@ def run(args: argparse.Namespace) -> None:
         client = base.setup_robot_if_needed(args)
         if client is not None:
             wrist_base.configure_pd_gains(client)
-            init_pose = _resolve_init_pose(args.dataset_root)
-            if args.right_side_only:
-                current_state_urdf = base.get_robot_state_urdf(client)
-                init_pose = apply_left_side_motion_mask(init_pose, current_state_urdf)
-            LOGGER.info("Moving robot to the dataset's initial pose...")
-            base.smooth_transition(client, init_pose, duration_s=3.0, frequency_hz=100)
-            LOGGER.info("Initial pose reached.")
+            # init_pose = _resolve_init_pose(args.dataset_root)
+            # if args.right_side_only:
+            #     current_state_urdf = base.get_robot_state_urdf(client)
+            #     init_pose = apply_left_side_motion_mask(init_pose, current_state_urdf)
+            # LOGGER.info("Moving robot to the dataset's initial pose...")
+            # base.smooth_transition(client, init_pose, duration_s=3.0, frequency_hz=100)
+            # LOGGER.info("Initial pose reached.")
 
         LOGGER.info("Warming up policy...")
         warmup_policy(

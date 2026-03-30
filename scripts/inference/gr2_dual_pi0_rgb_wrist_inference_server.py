@@ -41,58 +41,24 @@ from lerobot.policies.pi0.modeling_pi0 import PI0Policy  # noqa: E402
 LOGGER = logging.getLogger("gr2_dual_pi0_rgb_wrist_inference_server")
 
 DEFAULT_UNIX_SOCKET_PATH = "/tmp/gr2_dual_pi0_rgb_wrist.sock"
-MODEL_TAKE_OUT = "take_out"
-MODEL_PUT_IN = "put_in"
+MODEL_GREEN_TO_YELLOW = "green_to_yellow"
+MODEL_YELLOW_TO_GREEN = "yellow_to_green"
 
-# ---------------------------------------------------------------------------
-# Per-task PD gains
-# ---------------------------------------------------------------------------
-# take_out 任务：从箱子里取出瓶子放桌上，需要较高刚度保证抓取稳定
-PD_GAINS_TAKE_OUT = {
-    "kp": {
-        "left_manipulator": [300, 300, 100, 100, 50, 50, 50],
-        "right_manipulator": [220, 220, 95, 95, 45, 45, 45],
-        "waist": [200],
-        "head": [100, 100],
-    },
-    "kd": {
-        "left_manipulator": [10, 10, 5, 5, 5, 5, 5],
-        "right_manipulator": [10, 10, 5, 5, 5, 5, 5],
-        "waist": [10],
-        "head": [10, 10],
-    },
-}
+LEFT_MANIPULATOR_SLICE = slice(0, 7)
+LEFT_HAND_SLICE = slice(14, 20)
+RIGHT_HAND_FINGER_MIN_URDF = -1.9226667
+RIGHT_HAND_FINGER_MAX_URDF = 0.0
+RIGHT_HAND_FINGER_SLICE = slice(20, 24)
+RIGHT_HAND_THUMB_PITCH_INDEX = 24
 
-# put_in 任务：把瓶子放回箱子，需要更柔顺的控制避免碰撞
-PD_GAINS_PUT_IN = {
-    "kp": {
-        "left_manipulator": [300, 300, 100, 100, 50, 50, 50],
-        "right_manipulator": [150, 170, 70, 50, 45, 45, 45],
-        "waist": [200],
-        "head": [100, 100],
-    },
-    "kd": {
-        "left_manipulator": [10, 10, 5, 5, 5, 5, 5],
-        "right_manipulator": [10, 10, 5, 5, 5, 5, 5],
-        "waist": [10],
-        "head": [10, 10],
-    },
-}
-
-PD_GAINS_BY_MODEL: dict[str, dict[str, dict[str, list[int]]]] = {
-    MODEL_TAKE_OUT: PD_GAINS_TAKE_OUT,
-    MODEL_PUT_IN: PD_GAINS_PUT_IN,
-}
-DEFAULT_TAKE_OUT_CHECKPOINT_PATH = (
-    "/home/phl/workspace/mymodels/gr2/"
-    "pi0_gr2_grab_bottle_from_box_to_desk_rgb_3_cam/checkpoints/035000/pretrained_model"
+DEFAULT_GREEN_TO_YELLOW_CHECKPOINT_PATH = (
+    "/home/phl/workspace/mymodels/gr2/pi0/pi0_green_to_yellow_0327/checkpoints/last/pretrained_model"
 )
-DEFAULT_TAKE_OUT_TASK = "take the bottle out of the box and place it on the desk"
-DEFAULT_PUT_IN_CHECKPOINT_PATH = (
-    "/home/phl/workspace/mymodels/gr2/"
-    "pi0_gr2_grab_bottle_desk_to_box_rgb_3_cam/checkpoints/050000/pretrained_model"
+DEFAULT_GREEN_TO_YELLOW_TASK = "pick up the bottle from the green grid cell and place it on the yellow grid cell"
+DEFAULT_YELLOW_TO_GREEN_CHECKPOINT_PATH = (
+    "/home/phl/workspace/mymodels/gr2/pi0/pi0_gr2_black_capped_bottle_yellow_to_green/checkpoints/050000/pretrained_model"
 )
-DEFAULT_PUT_IN_TASK = "pick up the bottle from the grid cell and place it into the box"
+DEFAULT_YELLOW_TO_GREEN_TASK = "pick up the bottle from the yellow grid cell and place it on the green grid cell"
 
 
 @dataclass(frozen=True)
@@ -158,6 +124,18 @@ def _coerce_bool(value: Any, default: bool = False) -> bool:
     return default
 
 
+def apply_right_hand_trigger_coupling(action_urdf: np.ndarray) -> np.ndarray:
+    """Match the dataset's right-hand action pattern: fingers = -2 * thumb_pitch."""
+    if action_urdf.shape[0] <= RIGHT_HAND_THUMB_PITCH_INDEX:
+        return action_urdf
+    coupled = action_urdf.copy()
+    thumb_pitch = float(coupled[RIGHT_HAND_THUMB_PITCH_INDEX])
+    coupled[RIGHT_HAND_FINGER_SLICE] = float(
+        np.clip(-2.0 * thumb_pitch, RIGHT_HAND_FINGER_MIN_URDF, RIGHT_HAND_FINGER_MAX_URDF)
+    )
+    return coupled
+
+
 class DualModelInferenceRuntime:
     def __init__(self, args: argparse.Namespace):
         self.args = args
@@ -168,15 +146,15 @@ class DualModelInferenceRuntime:
 
         self.device = base.select_device(args.device)
         self.model_specs = {
-            MODEL_TAKE_OUT: ModelSpec(
-                name=MODEL_TAKE_OUT,
-                checkpoint_path=args.take_out_checkpoint_path,
-                task=args.take_out_task,
+            MODEL_GREEN_TO_YELLOW: ModelSpec(
+                name=MODEL_GREEN_TO_YELLOW,
+                checkpoint_path=args.green_to_yellow_checkpoint_path,
+                task=args.green_to_yellow_task,
             ),
-            MODEL_PUT_IN: ModelSpec(
-                name=MODEL_PUT_IN,
-                checkpoint_path=args.put_in_checkpoint_path,
-                task=args.put_in_task,
+            MODEL_YELLOW_TO_GREEN: ModelSpec(
+                name=MODEL_YELLOW_TO_GREEN,
+                checkpoint_path=args.yellow_to_green_checkpoint_path,
+                task=args.yellow_to_green_task,
             ),
         }
         self.models: dict[str, LoadedModel] = {}
@@ -185,7 +163,6 @@ class DualModelInferenceRuntime:
         self._shared_need_right_wrist = False
         self._did_move_to_init_pose = False
         self._last_fsm_state: int | None = None
-        self._pd_gains_for_model: str | None = None
         self._had_previous_run = False
         self._window_name = "GR2 Dual PI0 | RGB Wrist"
         self._gui_enabled = False
@@ -688,7 +665,6 @@ class DualModelInferenceRuntime:
             self._shared.client = None
             self._did_move_to_init_pose = False
             self._last_fsm_state = None
-            self._pd_gains_for_model: str | None = None
         try:
             client.close()
         except Exception:
@@ -849,20 +825,9 @@ class DualModelInferenceRuntime:
                 LOGGER.info("Reusing Aurora client for model '%s'.", run_cfg.model_name)
                 self._switch_robot_fsm_if_needed(client, run_cfg.fsm_state)
 
-            if client is not None and self._pd_gains_for_model != run_cfg.model_name:
-                gains = PD_GAINS_BY_MODEL.get(run_cfg.model_name)
-                if gains is not None:
-                    client.set_motor_cfg(kp_config=gains["kp"], kd_config=gains["kd"])
-                    LOGGER.info(
-                        "PD gains configured for model '%s'. left_manipulator Kp: %s",
-                        run_cfg.model_name,
-                        gains["kp"].get("left_manipulator"),
-                    )
-                else:
-                    # 未知模型名，回退到 rgb_wrist 的默认 PD
-                    rgb_wrist.configure_pd_gains(client)
-                    LOGGER.info("PD gains configured (fallback) for model '%s'.", run_cfg.model_name)
-                self._pd_gains_for_model = run_cfg.model_name
+            if client is not None:
+                rgb_wrist.configure_pd_gains(client)
+                LOGGER.info("PD gains configured for model '%s'.", run_cfg.model_name)
             return client
         except Exception:
             self._close_robot_client()
@@ -1034,6 +999,11 @@ class DualModelInferenceRuntime:
 
                 if not self.args.disable_clamp:
                     action_urdf = base.clamp_non_hand_joint_action(action_urdf)
+                # Apply right hand trigger coupling: fingers = -2 * thumb_pitch
+                action_urdf = apply_right_hand_trigger_coupling(action_urdf)
+                # Freeze left arm and left hand: overwrite with current state
+                action_urdf[LEFT_MANIPULATOR_SLICE] = state_full[LEFT_MANIPULATOR_SLICE]
+                action_urdf[LEFT_HAND_SLICE] = state_full[LEFT_HAND_SLICE]
                 if prev_action_urdf is not None:
                     action_urdf = base.stabilize_action(action_urdf, prev_action_urdf, algo_args)
 
@@ -1291,7 +1261,6 @@ class DualModelInferenceRuntime:
 
         payload 示例（可只传部分 group）:
         {
-            "model": "take_out",          # 可选，更新 PD_GAINS_BY_MODEL 中的预设
             "kp": {"right_manipulator": [270, 250, 95, 95, 45, 45, 45]},
             "kd": {"right_manipulator": [10, 10, 5, 5, 5, 5, 5]},
             "apply": true                 # 默认 true，立即下发到机器人
@@ -1305,72 +1274,34 @@ class DualModelInferenceRuntime:
                 "message": "至少提供 kp 或 kd 中的一项",
             }
 
-        model_name = str(payload.get("model", "")).strip().lower() or None
         apply_now = _coerce_bool(payload.get("apply", True), default=True)
 
-        # 更新内存中的预设
-        if model_name:
-            if model_name not in PD_GAINS_BY_MODEL:
-                return HTTPStatus.NOT_FOUND, {
-                    "ok": False,
-                    "message": f"unknown model: {model_name}, available: {list(PD_GAINS_BY_MODEL.keys())}",
-                }
-            gains = PD_GAINS_BY_MODEL[model_name]
-            for group, values in kp_patch.items():
-                gains["kp"][group] = values
-            for group, values in kd_patch.items():
-                gains["kd"][group] = values
-            LOGGER.info("PD preset updated for model '%s': kp_groups=%s kd_groups=%s",
-                        model_name, list(kp_patch.keys()), list(kd_patch.keys()))
-
-        # 立即下发到机器人
         applied = False
         if apply_now:
             with self._lock:
                 client = self._shared.client
             if client is not None:
-                if model_name:
-                    full_gains = PD_GAINS_BY_MODEL[model_name]
-                    client.set_motor_cfg(kp_config=full_gains["kp"], kd_config=full_gains["kd"])
-                    self._pd_gains_for_model = model_name
-                else:
-                    # 没指定 model，只下发 patch 中的 group
-                    if kp_patch or kd_patch:
-                        client.set_motor_cfg(kp_config=kp_patch or {}, kd_config=kd_patch or {})
+                if kp_patch or kd_patch:
+                    client.set_motor_cfg(kp_config=kp_patch or {}, kd_config=kd_patch or {})
                 applied = True
                 LOGGER.info("PD gains applied to robot. kp_groups=%s kd_groups=%s",
                             list(kp_patch.keys()), list(kd_patch.keys()))
             else:
-                LOGGER.warning("No robot client connected, PD gains saved but not applied.")
+                LOGGER.warning("No robot client connected, PD gains not applied.")
 
         return HTTPStatus.OK, {
             "ok": True,
             "message": "PD gains updated" + (" and applied" if applied else " (not applied, no robot client)"),
-            "model": model_name,
             "applied": applied,
             "kp_groups_updated": list(kp_patch.keys()),
             "kd_groups_updated": list(kd_patch.keys()),
         }
 
     def get_pd(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-        """查询当前 PD 增益预设。"""
-        model_name = str(payload.get("model", "")).strip().lower() or None
-        if model_name:
-            if model_name not in PD_GAINS_BY_MODEL:
-                return HTTPStatus.NOT_FOUND, {
-                    "ok": False,
-                    "message": f"unknown model: {model_name}",
-                }
-            return HTTPStatus.OK, {
-                "ok": True,
-                "model": model_name,
-                "gains": PD_GAINS_BY_MODEL[model_name],
-                "active_pd_model": self._pd_gains_for_model,
-            }
+        """查询当前 PD 增益（直接从机器人读取不再可用，仅返回状态）。"""
         return HTTPStatus.OK, {
             "ok": True,
-            "all_gains": {name: gains for name, gains in PD_GAINS_BY_MODEL.items()},
-            "active_pd_model": self._pd_gains_for_model,
+            "message": "PD gains are managed by rgb_wrist defaults; per-model presets removed.",
         }
 
     def shutdown(self) -> None:
@@ -1394,10 +1325,10 @@ class DualModelInferenceRuntime:
         if normalized_method == "stop":
             timeout_s = float(payload.get("timeout_s", 5.0))
             return self.stop(timeout_s=timeout_s)
-        if normalized_method in {"start_take_out", "start_takeout"}:
-            return self.start_model(MODEL_TAKE_OUT, payload)
-        if normalized_method in {"start_put_in", "start_putin"}:
-            return self.start_model(MODEL_PUT_IN, payload)
+        if normalized_method in {"start_green_to_yellow", "start_greentoyellow"}:
+            return self.start_model(MODEL_GREEN_TO_YELLOW, payload)
+        if normalized_method in {"start_yellow_to_green", "start_yellowtogreen"}:
+            return self.start_model(MODEL_YELLOW_TO_GREEN, payload)
         if normalized_method == "start_model":
             model_name = str(payload.get("model_name", payload.get("model", ""))).strip().lower()
             return self.start_model(model_name, payload)
@@ -1473,10 +1404,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Dual-model PI0 RGB wrist inference server for GR2")
     parser.add_argument("--unix-socket-path", type=str, default=DEFAULT_UNIX_SOCKET_PATH)
 
-    parser.add_argument("--take-out-checkpoint-path", type=str, default=DEFAULT_TAKE_OUT_CHECKPOINT_PATH)
-    parser.add_argument("--take-out-task", type=str, default=DEFAULT_TAKE_OUT_TASK)
-    parser.add_argument("--put-in-checkpoint-path", type=str, default=DEFAULT_PUT_IN_CHECKPOINT_PATH)
-    parser.add_argument("--put-in-task", type=str, default=DEFAULT_PUT_IN_TASK)
+    parser.add_argument("--green-to-yellow-checkpoint-path", type=str, default=DEFAULT_GREEN_TO_YELLOW_CHECKPOINT_PATH)
+    parser.add_argument("--green-to-yellow-task", type=str, default=DEFAULT_GREEN_TO_YELLOW_TASK)
+    parser.add_argument("--yellow-to-green-checkpoint-path", type=str, default=DEFAULT_YELLOW_TO_GREEN_CHECKPOINT_PATH)
+    parser.add_argument("--yellow-to-green-task", type=str, default=DEFAULT_YELLOW_TO_GREEN_TASK)
 
     parser.add_argument("--robot-type", type=str, default=base.DEFAULT_ROBOT_TYPE)
     parser.add_argument("--domain-id", type=int, default=123)
@@ -1566,9 +1497,9 @@ def main() -> None:
 
     LOGGER.info("Unix transport ready at %s", socket_path)
     LOGGER.info(
-        "Dual PI0 inference server started | take_out=%s | put_in=%s",
-        args.take_out_checkpoint_path,
-        args.put_in_checkpoint_path,
+        "Dual PI0 inference server started | green_to_yellow=%s | yellow_to_green=%s",
+        args.green_to_yellow_checkpoint_path,
+        args.yellow_to_green_checkpoint_path,
     )
 
     stop_event = threading.Event()

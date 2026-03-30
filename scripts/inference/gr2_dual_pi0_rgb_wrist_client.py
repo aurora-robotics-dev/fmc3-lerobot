@@ -67,7 +67,7 @@ def request_ok(
     return data
 
 
-def start_take_out(
+def start_green_to_yellow(
     *,
     max_steps: int | None = None,
     fps: float | None = None,
@@ -87,14 +87,14 @@ def start_take_out(
     if stop_timeout_s is not None:
         payload["stop_timeout_s"] = stop_timeout_s
     return request_ok(
-        "start_take_out",
+        "start_green_to_yellow",
         payload,
         unix_socket_path=unix_socket_path,
         timeout_s=timeout_s,
     )
 
 
-def start_put_in(
+def start_yellow_to_green(
     *,
     max_steps: int | None = None,
     fps: float | None = None,
@@ -114,7 +114,7 @@ def start_put_in(
     if stop_timeout_s is not None:
         payload["stop_timeout_s"] = stop_timeout_s
     return request_ok(
-        "start_put_in",
+        "start_yellow_to_green",
         payload,
         unix_socket_path=unix_socket_path,
         timeout_s=timeout_s,
@@ -197,7 +197,7 @@ def parse_args() -> argparse.Namespace:
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    for command in ["start-take-out", "start-put-in"]:
+    for command in ["start-green-to-yellow", "start-yellow-to-green"]:
         subparser = subparsers.add_parser(command)
         subparser.add_argument("--max-steps", type=int, default=None)
         subparser.add_argument("--fps", type=float, default=None)
@@ -214,7 +214,7 @@ def parse_args() -> argparse.Namespace:
     # set-pd: 热更新 PD 增益
     set_pd_parser = subparsers.add_parser("set-pd", help="热更新 PD 增益（不重启 server）")
     set_pd_parser.add_argument("--model", type=str, default=None,
-                               help="更新哪个模型的预设 (take_out / put_in)，不传则只下发不存预设")
+                               help="更新哪个模型的预设 (green_to_yellow / yellow_to_green)，不传则只下发不存预设")
     set_pd_parser.add_argument("--kp", type=str, default=None,
                                help='JSON 格式 kp，如 \'{"right_manipulator": [270, 250, 95, 95, 45, 45, 45]}\'')
     set_pd_parser.add_argument("--kd", type=str, default=None,
@@ -225,7 +225,7 @@ def parse_args() -> argparse.Namespace:
     # get-pd: 查看当前 PD 增益
     get_pd_parser = subparsers.add_parser("get-pd", help="查看当前 PD 增益预设")
     get_pd_parser.add_argument("--model", type=str, default=None,
-                               help="查看指定模型的 PD (take_out / put_in)，不传则查看全部")
+                               help="查看指定模型的 PD (green_to_yellow / yellow_to_green)，不传则查看全部")
 
     return parser.parse_args()
 
@@ -233,9 +233,9 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    if args.command == "start-take-out":
+    if args.command == "start-green-to-yellow":
         _print_json(
-            start_take_out(
+            start_green_to_yellow(
                 max_steps=args.max_steps,
                 fps=args.fps,
                 fsm_state=args.fsm_state,
@@ -247,9 +247,9 @@ def main() -> None:
         )
         return
 
-    if args.command == "start-put-in":
+    if args.command == "start-yellow-to-green":
         _print_json(
-            start_put_in(
+            start_yellow_to_green(
                 max_steps=args.max_steps,
                 fps=args.fps,
                 fsm_state=args.fsm_state,

@@ -220,6 +220,34 @@ conda run --no-capture-output -n lerobot-pi0 \
 
 显存不足时可优先降低 `batch_size`，或开启/保持 `gradient_checkpointing=true`。
 
+### PI0.5 触觉与本地 PaliGemma
+
+PI0.5 支持可选触觉输入。不开触觉时保持默认：
+
+```bash
+--policy.type=pi05 \
+--policy.use_tactile=false
+```
+
+使用 O10 触觉热力图时，数据集特征可命名为 `observation.tactile.left`、
+`observation.tactile.right` 或 `observation.tactile`。设置 `--policy.use_tactile=true`
+后会自动判断左手、右手或双手；默认触觉图尺寸为 `[12,32]`。
+
+```bash
+--policy.type=pi05 \
+--policy.use_tactile=true \
+--policy.tactile_input_shape='[12,32]' \
+--policy.tactile_encoder_type=cnn
+```
+
+如果本地已有 PaliGemma tokenizer，建议直接指定本地路径，避免访问 gated Hub：
+
+```bash
+export LEROBOT_PALIGEMMA_TOKENIZER=/home/phl/workspace/models/paligemma-tokenizer
+# 或者：
+--policy.paligemma_tokenizer_name=/home/phl/workspace/models/paligemma-tokenizer
+```
+
 ### 部署与推理
 
 常用部署入口：

@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from dataclasses import dataclass, field
 
 from lerobot.configs.policies import PreTrainedConfig
@@ -21,7 +22,7 @@ from lerobot.configs.types import FeatureType, NormalizationMode, PolicyFeature
 from lerobot.optim.optimizers import AdamWConfig
 from lerobot.optim.schedulers import CosineDecayWithWarmupSchedulerConfig
 from lerobot.policies.rtc.configuration_rtc import RTCConfig
-from lerobot.utils.constants import ACTION, OBS_IMAGES, OBS_STATE
+from lerobot.utils.constants import ACTION, OBS_IMAGES, OBS_STATE, OBS_TACTILE
 
 DEFAULT_IMAGE_SIZE = 224
 
@@ -61,6 +62,12 @@ class PI05Config(PreTrainedConfig):
     # Add empty images. Used to add empty cameras when no image features are present.
     empty_cameras: int = 0
 
+    paligemma_tokenizer_name: str = field(
+        default_factory=lambda: os.environ.get(
+            "LEROBOT_PALIGEMMA_TOKENIZER",
+            "google/paligemma-3b-pt-224",
+        )
+    )
     tokenizer_max_length: int = 200  # see openpi `__post_init__`
 
     normalization_mapping: dict[str, NormalizationMode] = field(
@@ -68,8 +75,20 @@ class PI05Config(PreTrainedConfig):
             "VISUAL": NormalizationMode.IDENTITY,
             "STATE": NormalizationMode.QUANTILES,  # Pi0.5 uses quantiles for state
             "ACTION": NormalizationMode.QUANTILES,  # Pi0.5 uses quantiles for action
+            "TACTILE": NormalizationMode.MEAN_STD,
         }
     )
+
+    # Tactile sensor configuration.
+    use_tactile: bool = False
+    tactile_encoder_type: str = "cnn"  # choices: ["cnn", "attention"]
+    tactile_input_shape: tuple[int, int] = (12, 32)
+    tactile_dropout: float = 0.3
+    tactile_feature_dim: int = 256
+    # None means auto-detect from input_features. Supported examples:
+    # ["observation.tactile.right"], ["observation.tactile.left"], or both.
+    tactile_features: list[str] | None = None
+    n_tactile_tokens: int = 1
 
     # Training settings
     gradient_checkpointing: bool = False  # Enable gradient checkpointing for memory optimization
@@ -95,8 +114,6 @@ class PI05Config(PreTrainedConfig):
     scheduler_decay_steps: int = 30_000
     scheduler_decay_lr: float = 2.5e-6
 
-    tokenizer_max_length: int = 200  # see openpi `__post_init__`
-
     def __post_init__(self):
         super().__post_init__()
 
@@ -114,6 +131,18 @@ class PI05Config(PreTrainedConfig):
 
         if self.dtype not in ["bfloat16", "float32"]:
             raise ValueError(f"Invalid dtype: {self.dtype}")
+
+        if self.tactile_encoder_type not in ["cnn", "attention"]:
+            raise ValueError(
+                f"Invalid tactile_encoder_type: {self.tactile_encoder_type}. "
+                "Expected one of ['cnn', 'attention']."
+            )
+
+        if len(tuple(self.tactile_input_shape)) != 2:
+            raise ValueError(f"tactile_input_shape must be 2D, got {self.tactile_input_shape}")
+
+        if self.n_tactile_tokens < 1:
+            raise ValueError(f"n_tactile_tokens must be >= 1, got {self.n_tactile_tokens}")
 
     def validate_features(self) -> None:
         """Validate and set up input/output features."""
@@ -138,6 +167,59 @@ class PI05Config(PreTrainedConfig):
                 shape=(self.max_action_dim,),  # Padded to max_action_dim
             )
             self.output_features[ACTION] = action_feature
+
+        if not self.use_tactile:
+            self.tactile_features = None
+            return
+
+        self.tactile_input_shape = tuple(self.tactile_input_shape)
+        detected_tactile_features = self._detect_tactile_features()
+
+        if self.tactile_features is None:
+            self.tactile_features = detected_tactile_features
+        else:
+            missing = [key for key in self.tactile_features if key not in self.input_features]
+            if missing:
+                raise ValueError(f"Configured tactile_features are missing from input_features: {missing}")
+            self.tactile_features = self._sort_tactile_features(self.tactile_features)
+
+        for key in self.tactile_features:
+            feature = self.input_features[key]
+            if feature.type is not FeatureType.TACTILE:
+                self.input_features[key] = PolicyFeature(type=FeatureType.TACTILE, shape=feature.shape)
+            if tuple(feature.shape) != tuple(self.tactile_input_shape):
+                raise ValueError(
+                    f"Tactile feature {key!r} shape must match tactile_input_shape "
+                    f"{self.tactile_input_shape}, got {feature.shape}"
+                )
+
+        if not self.tactile_features:
+            raise ValueError(
+                "use_tactile=True but no 2D tactile feature was found. "
+                f"Expected {OBS_TACTILE}, {OBS_TACTILE}.left, or {OBS_TACTILE}.right "
+                f"with shape {self.tactile_input_shape}."
+            )
+
+    def _detect_tactile_features(self) -> list[str]:
+        tactile_keys = []
+        for key, feature in self.input_features.items():
+            if not self._is_tactile_key(key):
+                continue
+            if len(feature.shape) != 2:
+                continue
+            tactile_keys.append(key)
+        return self._sort_tactile_features(tactile_keys)
+
+    def _is_tactile_key(self, key: str) -> bool:
+        return key == OBS_TACTILE or key.startswith(f"{OBS_TACTILE}.")
+
+    def _sort_tactile_features(self, keys: list[str]) -> list[str]:
+        priority = {
+            OBS_TACTILE: 0,
+            f"{OBS_TACTILE}.left": 1,
+            f"{OBS_TACTILE}.right": 2,
+        }
+        return sorted(keys, key=lambda key: (priority.get(key, 100), key))
 
     def get_optimizer_preset(self) -> AdamWConfig:
         return AdamWConfig(

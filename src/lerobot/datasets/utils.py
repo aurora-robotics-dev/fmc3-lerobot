@@ -44,7 +44,7 @@ from lerobot.datasets.backward_compatibility import (
     BackwardCompatibilityError,
     ForwardCompatibilityError,
 )
-from lerobot.utils.constants import ACTION, OBS_ENV_STATE, OBS_STR
+from lerobot.utils.constants import ACTION, OBS_ENV_STATE, OBS_STR, OBS_TACTILE
 from lerobot.utils.utils import SuppressProgressBars, is_valid_numpy_dtype_string
 
 DEFAULT_CHUNK_SIZE = 1000  # Max number of files per chunk
@@ -637,9 +637,18 @@ def hw_to_dataset_features(
     joint_fts = {
         key: ftype
         for key, ftype in hw_features.items()
-        if ftype is float or (isinstance(ftype, PolicyFeature) and ftype.type != FeatureType.VISUAL)
+        if ftype is float
+        or (
+            isinstance(ftype, PolicyFeature)
+            and ftype.type not in (FeatureType.VISUAL, FeatureType.TACTILE)
+        )
     }
     cam_fts = {key: shape for key, shape in hw_features.items() if isinstance(shape, tuple)}
+    tactile_fts = {
+        key: ftype
+        for key, ftype in hw_features.items()
+        if isinstance(ftype, PolicyFeature) and ftype.type == FeatureType.TACTILE
+    }
 
     if joint_fts and prefix == ACTION:
         features[prefix] = {
@@ -660,6 +669,17 @@ def hw_to_dataset_features(
             "dtype": "video" if use_video else "image",
             "shape": shape,
             "names": ["height", "width", "channels"],
+        }
+
+    for key, policy_feature in tactile_fts.items():
+        feature_key = key if key.startswith(f"{prefix}.") else f"{prefix}.tactile.{key}"
+        dim_names = ["height", "width"] if len(policy_feature.shape) == 2 else [
+            f"dim_{index}" for index in range(len(policy_feature.shape))
+        ]
+        features[feature_key] = {
+            "dtype": "float32",
+            "shape": policy_feature.shape,
+            "names": dim_names,
         }
 
     _validate_feature_names(features)
@@ -689,6 +709,8 @@ def build_dataset_frame(
             continue
         elif ft["dtype"] == "float32" and len(ft["shape"]) == 1:
             frame[key] = np.array([values[name] for name in ft["names"]], dtype=np.float32)
+        elif ft["dtype"] == "float32":
+            frame[key] = np.array(values[key], dtype=np.float32)
         elif ft["dtype"] in ["image", "video"]:
             frame[key] = values[key.removeprefix(f"{prefix}.images.")]
 
@@ -726,6 +748,8 @@ def dataset_to_policy_features(features: dict[str, dict]) -> dict[str, PolicyFea
                 shape = (shape[2], shape[0], shape[1])
         elif key == OBS_ENV_STATE:
             type = FeatureType.ENV
+        elif key == OBS_TACTILE or key.startswith(f"{OBS_TACTILE}."):
+            type = FeatureType.TACTILE
         elif key.startswith(OBS_STR):
             type = FeatureType.STATE
         elif key.startswith(ACTION):

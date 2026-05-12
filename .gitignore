@@ -28,6 +28,8 @@
 [Bb]in/
 .vscode/
 .idea/
+.codex
+.codex/
 *.swp
 *.patch
 .DS_Store
@@ -39,6 +41,7 @@ __pycache__/
 .venv/
 env/
 venv/
+gr2_env/
 .env
 
 # --- 补充：日志与临时文件 ---
@@ -69,10 +72,14 @@ temp/
 # RoboBrain 推理结果输出目录
 result/
 results/
+scripts/outputs/
+scripts/scripts/outputs/
+fourier_aurora_sdk/
 # 自动生成的标注图片
 *_annotated.jpg
 *_annotated.png
 *_annotated.jpeg
+top_camera_*.png
 
 # 常见 ML/数据生成文件
 *.npy

@@ -620,48 +620,50 @@ def _keep_episodes_from_video_with_av(
 
     out.start_encoding()
 
-    # Create set of (start, end) ranges for fast lookup.
-    # Convert to a sorted list for efficient checking.
-    time_ranges = sorted(episodes_to_keep)
+    # Convert (start_time, end_time) ranges to (start_frame, end_frame) integer ranges
+    # to avoid float-precision off-by-one at boundaries (e.g. 1/30 not exact in IEEE 754).
+    # end_frame is exclusive: source frame index i is kept iff start_frame <= i < end_frame.
+    frame_ranges = sorted(
+        (int(round(s * fps)), int(round(e * fps))) for s, e in episodes_to_keep
+    )
 
-    # Track frame index for setting PTS and current range being processed.
+    # Track output frame index (for output PTS), input frame index, and current range.
     frame_count = 0
+    src_frame_idx = 0
     range_idx = 0
 
     # Read through entire video once and filter frames.
+    done = False
     for packet in in_container.demux(v_in):
+        if done:
+            break
         for frame in packet.decode():
             if frame is None:
                 continue
 
-            # Get frame timestamp.
-            frame_time = float(frame.pts * frame.time_base) if frame.pts is not None else 0.0
-
-            # Check if frame is in any of our desired time ranges.
-            # Skip ranges that have already passed.
-            while range_idx < len(time_ranges) and frame_time >= time_ranges[range_idx][1]:
+            # Advance past ranges fully behind us.
+            while range_idx < len(frame_ranges) and src_frame_idx >= frame_ranges[range_idx][1]:
                 range_idx += 1
 
-            # If we've passed all ranges, stop processing.
-            if range_idx >= len(time_ranges):
+            if range_idx >= len(frame_ranges):
+                done = True
                 break
 
-            # Check if frame is in current range.
-            start_ts, end_ts = time_ranges[range_idx]
-            if frame_time < start_ts:
+            start_f, end_f = frame_ranges[range_idx]
+            if src_frame_idx < start_f:
+                src_frame_idx += 1
                 continue
 
             # Frame is in range - create a new frame with reset timestamps.
-            # We need to create a copy to avoid modifying the original.
             new_frame = frame.reformat(width=v_out.width, height=v_out.height, format=v_out.pix_fmt)
             new_frame.pts = frame_count
             new_frame.time_base = Fraction(1, int(fps))
 
-            # Encode and mux the frame.
             for pkt in v_out.encode(new_frame):
                 out.mux(pkt)
 
             frame_count += 1
+            src_frame_idx += 1
 
     # Flush encoder.
     for pkt in v_out.encode():
@@ -675,7 +677,7 @@ def _copy_and_reindex_videos(
     src_dataset: LeRobotDataset,
     dst_meta: LeRobotDatasetMetadata,
     episode_mapping: dict[int, int],
-    vcodec: str = "libsvtav1",
+    vcodec: str = "h264",
     pix_fmt: str = "yuv420p",
 ) -> dict[int, dict]:
     """Copy and filter video files, only re-encoding files with deleted episodes.
@@ -869,6 +871,34 @@ def _copy_and_reindex_episodes_metadata(
                                 value = value.reshape(3, 1, 1)
 
                     episode_stats[feature_name][stat_name] = value
+
+        # Rewrite synthetic index/episode_index stats to reflect new global indices
+        # (per-episode stats loaded from source hold ORIGINAL indices; after reindexing
+        # they would aggregate to stale min/max).
+        new_from = int(episode_meta["dataset_from_index"])
+        new_to = int(episode_meta["dataset_to_index"])  # exclusive
+        ep_length_new = new_to - new_from
+        if ep_length_new > 0:
+            idx_min = float(new_from)
+            idx_max = float(new_to - 1)
+            idx_mean = (idx_min + idx_max) / 2.0
+            n = float(ep_length_new)
+            idx_std = float(np.sqrt(max(0.0, (n * n - 1.0) / 12.0)))
+            episode_stats["index"] = {
+                "min": np.array([idx_min]),
+                "max": np.array([idx_max]),
+                "mean": np.array([idx_mean]),
+                "std": np.array([idx_std]),
+                "count": np.array([ep_length_new]),
+            }
+            ep_val = float(new_idx)
+            episode_stats["episode_index"] = {
+                "min": np.array([ep_val]),
+                "max": np.array([ep_val]),
+                "mean": np.array([ep_val]),
+                "std": np.array([0.0]),
+                "count": np.array([ep_length_new]),
+            }
 
         all_stats.append(episode_stats)
 
